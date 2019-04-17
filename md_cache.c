@@ -53,7 +53,7 @@ static int write_bio_count = 0;
 static const struct mddev *Gmddev;
 static struct kmem_cache *brc_pool;
 
-//read����ʹ�õ���hash_list,�費��Ҫʹ�������������ɴ����ԣ�������д��
+//readʹõhash_list,費Ҫʹɴԣд
 extern struct vdisk_flush_data** update_shmeta(
                             struct cache_tree_data *mdc_data,
                             struct vdisk_flush_data *vfdata);
@@ -2712,14 +2712,16 @@ static void mdc_make_request(struct mddev *mddev, struct bio *bi)
     
     //md_write_start(mddev, bi);
 
+	//对齐，获取bio开始位置对应的条带扇区号
     logical_sector = bi->bi_iter.bi_sector & ~((sector_t)STRIPE_SECTORS_MAKE-1);
     first_logical = logical_sector;
     last_sector = bio_end_sector(bi);
-    num_bio = bio_sectors(bi);
+    //获取bio的尾部扇区号
+    num_bio = bio_sectors(bi);//含有的扇区数目
 
     // bi->bi_next = NULL;
-    cache_set_bi_stripes(bi, 1);
-    struct bio_vec *bv;
+    cache_set_bi_stripes(bi, 1);//设置物理段
+    struct bio_vec *bv;//含有的段数目
     sector_t sec = bi->bi_iter.bi_sector;
 
     // pages in bio are aligned or not
@@ -2737,6 +2739,7 @@ static void mdc_make_request(struct mddev *mddev, struct bio *bi)
     prepare_to_wait(&ctd->mdc_make_request_queue, &wait_make_cache,
                     TASK_UNINTERRUPTIBLE);
     int page_idx = bi->bi_iter.bi_idx;
+	//当前bio的page在bi_io_vec数组中的索引号，bi_io_vec中存放了bio_vec(保存了bio各个page的起始地址和偏移)
     for (; logical_sector < last_sector; logical_sector += STRIPE_SECTORS_MAKE)
     {
         bt_find = NULL;  
