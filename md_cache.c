@@ -632,6 +632,7 @@ struct bio_test *insert_page_to_bio_test(struct bio_test *bt,
 
     struct r5plug *rp = &bt->dev[item];
     if(rp->valid == 1 && rp->page != NULL)
+    //表示此时条带中的page是有效的
     {
         // use old page
         if((rp->offset + rp->length < bv->bv_offset) ||
@@ -708,7 +709,7 @@ struct bio_test *insert_page_to_bio_test(struct bio_test *bt,
                 return bt;
             }
         }
-        else
+        else//表示 
         {
             // can merge dirty data
             struct page *pagg_test = rp->page;
@@ -923,7 +924,7 @@ void transfer_bio_test_to_vdisk_cache_data(struct cache_tree_data *ctd,
             rp = &bt->dev[idx];
 
             spin_lock(&cdev->lock);
-            if(test_bit(VCD_PAGE_FLUSHING, &cdev->flag))
+            if(test_bit(VCD_PAGE_FLUSHING, &cdev->flag))//条带在flushing 链表
             {
                 // cdev is flushing now, use replce
                 if(cdev->replace_page == NULL)
@@ -983,7 +984,7 @@ void transfer_bio_test_to_vdisk_cache_data(struct cache_tree_data *ctd,
                 // so wait flushing end, and write_page_endio will handle it!
             }
             else if(test_bit(VCD_PAGE_DIRTY, &cdev->flag) /*cdev->dirty == 1*/ &&
-                    cdev->page != NULL)
+                    cdev->page != NULL)//条带在dirty链表中
             {
                 if(cdev->sector != bt->dev[idx].sector)
                     mdc_err("logical_sector %lu != old_sector %lu\n",
@@ -1031,7 +1032,7 @@ void transfer_bio_test_to_vdisk_cache_data(struct cache_tree_data *ctd,
                     cdev->offset = new_offset;
                 }
             }
-            else
+            else//条带在 其他链表中
             {
                 struct page *old_page = cdev->page;
                 struct page *new_page = rp->page;
@@ -1213,10 +1214,10 @@ void handle_bio_test_to_tree(struct mddev *mddev,
             mdc_err("strange flag %d for vcd %lu %p\n", 
                    cache_hitted->flag, cache_hitted->lba_align, cache_hitted);
         }
-    }
+    }//没有找到相应的vdisk_cache_data
     else
     {
-        if(!is_cache_full_data(ctd->vdisk_cache_data_count))
+        if(!is_cache_full_data(ctd->vdisk_cache_data_count))//没有满
         {
             // alloc vdisk_cache_data
             cache_hitted = alloc_data_cache_struct(
@@ -1236,14 +1237,14 @@ void handle_bio_test_to_tree(struct mddev *mddev,
             else
                 mdc_err("cache not full but vcd alloc failed!\n");
         }
-        else
+        else//满了
         {
 handle_bio_test_to_tree_retry:
             subs = atomic_read(&ctd->replace_vdisk_cache_data_count);
-            if(subs <= 0)
+            if(subs <= 0)//replace_vdisk_cache_data_list都没有，那就需要进行flush重组，将回收的vdisk_cache_data放入replace_list 
             {
                 spin_lock(&ctd->clean_vdisk_cache_data_list_lock);
-                if(!list_empty_careful(&ctd->clean_vdisk_cache_data_list))
+                if(!list_empty_careful(&ctd->clean_vdisk_cache_data_list))//脏的非空
                 {
                     cache_hitted = list_last_entry(
                                     &ctd->clean_vdisk_cache_data_list,
@@ -1259,7 +1260,7 @@ handle_bio_test_to_tree_retry:
                             subs, cache_hitted->lba_align, cache_hitted);
 #endif
                 }
-                else
+                else//空
                 {
                     spin_unlock(&ctd->clean_vdisk_cache_data_list_lock);
                     // need to flush some vdisk_cache_data to raid 
@@ -1273,10 +1274,10 @@ handle_bio_test_to_tree_retry:
                     clear_bit(MDC_FLUSH_VCDS_FORCE, &ctd->_flags);
                 }
             }        
-            if(!cache_hitted)
+            if(!cache_hitted)//获取失败，由于前面下刷了，此时肯定有replace的
             { 
                 spin_lock(&ctd->replace_vdisk_cache_data_list_lock);
-                if(!list_empty_careful(&ctd->replace_vdisk_cache_data_list))
+                if(!list_empty_careful(&ctd->replace_vdisk_cache_data_list))//已经有可替换的vdisk_cache_data了
                 {
                     // use free vdisk_cache_data
                     cache_hitted = list_last_entry(
@@ -1295,7 +1296,7 @@ handle_bio_test_to_tree_retry:
 #endif
 
                 }
-                else
+                else//空
                 {
                     mdc_err("reset replace_vdisk_cache_data_list\n");
                     INIT_LIST_HEAD(&ctd->replace_vdisk_cache_data_list);
@@ -1304,7 +1305,7 @@ handle_bio_test_to_tree_retry:
                 spin_unlock(&ctd->replace_vdisk_cache_data_list_lock);
             }
 
-            if(cache_hitted)
+            if(cache_hitted)//获取成功
             {
                 // remove node from radix tree
                 delete_node_in_tree(ctd->data_cache_tree_root,
@@ -1320,7 +1321,7 @@ handle_bio_test_to_tree_retry:
                 goto handle_bio_test_to_tree_retry;
         }
         
-        if(cache_hitted)
+        if(cache_hitted)//获取到了vdisk_cache_data
         {
             // move node to dirty lru head
             spin_lock(&ctd->dirty_vdisk_cache_data_list_lock);

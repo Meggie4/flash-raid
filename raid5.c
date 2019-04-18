@@ -1535,38 +1535,39 @@ async_copy_data(int frombio, struct bio *bio, struct page **page,
 	struct async_submit_ctl submit;
 	enum async_tx_flags flags = 0;
 
-	if (bio->bi_iter.bi_sector >= sector)
+	if (bio->bi_iter.bi_sector >= sector)//第一个page满足这种情况，由于对齐的原因，page_offset > 0
 		page_offset = (signed)(bio->bi_iter.bi_sector - sector) * 512;
 	else
-		page_offset = (signed)(sector - bio->bi_iter.bi_sector) * -512;
+		page_offset = (signed)(sector - bio->bi_iter.bi_sector) * -512;//其他的page的扇区号都在bio扇区号的后面
 
 	if (frombio)
 		flags |= ASYNC_TX_FENCE;
 	init_async_submit(&submit, flags, tx, NULL, NULL, NULL);
 
-	bio_for_each_segment(bvl, bio, iter) {
+    //page_offset表示的是当前条带的缓冲区填充的位置索引。
+	bio_for_each_segment(bvl, bio, iter) {//遍历segment
 		int len = bvl.bv_len;
 		int clen;
 		int b_offset = 0;
 
-		if (page_offset < 0) {
-			b_offset = -page_offset;
-			page_offset += b_offset;
-			len -= b_offset;
+		if (page_offset < 0) {//当前的page肯定是除了第一个page的其他page，表示刚开始填充
+			b_offset = -page_offset;//此时为偏移量
+			page_offset += b_offset;//0
+			len -= b_offset;//判断当前段是不是该page的起始segment
 		}
 
-		if (len > 0 && page_offset + len > STRIPE_SIZE)
-			clen = STRIPE_SIZE - page_offset;
-		else
-			clen = len;
+		if (len > 0 && page_offset + len > STRIPE_SIZE)//是该page的起始segment, 此时的len是表示segment能提供的有效长度
+			clen = STRIPE_SIZE - page_offset;//当前的segment提供的有效长度
+		else//len < 0 获取page_offset + len <= STRIPE_SIZE
+			clen = len;//此时clen要么< 0, 要么是当前segment能提供的长度
 
-		if (clen > 0) {
-			b_offset += bvl.bv_offset;
-			bio_page = bvl.bv_page;
-			if (frombio) {
+		if (clen > 0) {//表示该segment有用，
+			b_offset += bvl.bv_offset;//当前段在page的偏移
+			bio_page = bvl.bv_page;//当前段所在的page
+			if (frombio) {//从bio拷贝到条带对应的缓冲区
 				if (sh->raid_conf->skip_copy &&
 				    b_offset == 0 && page_offset == 0 &&
-				    clen == STRIPE_SIZE)
+				    clen == STRIPE_SIZE)//如果当前段所在的page刚好填充了整个segment,而且当前条带的缓冲区还没开始填充，那就将该page直接转换为
 					*page = bio_page;
 				else
 					tx = async_memcpy(*page, bio_page, page_offset,
@@ -1580,7 +1581,8 @@ async_copy_data(int frombio, struct bio *bio, struct page **page,
 
 		if (clen < len) /* hit end of page */
 			break;
-		page_offset +=  len;
+		page_offset +=  len;//如果该segment是无效的，那此时len < 0, 此时page_offset仍然 <0,
+        //表示还没有开始填充，还需要遍历page_offset长度的segment才行。
 	}
 
 	return tx;
